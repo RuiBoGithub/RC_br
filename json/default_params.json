@@ -1,0 +1,19 @@
+{
+    "u_walls": 0.19,
+    "u_windows": 1.41,
+    "thermal_capacitance_per_floor_area": 165000,
+  
+    "infl_rate_m3ph_m2": 4.0,
+  
+    "gain_per_person": 100,
+    "appliance_gains": 11.77,
+    "max_occupancy": 765,
+  
+    "t_set_heating": 21.0,
+    "t_weekend_heating": 18.0,
+    "t_setback_heating": 15.0,
+    "t_set_cooling": 28.0,
+  
+    "lighting_load": 4.25,
+    "ventilation_efficiency": 0.75
+  }
