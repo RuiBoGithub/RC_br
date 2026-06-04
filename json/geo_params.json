@@ -3,6 +3,5 @@
     "WALL_AREA"  :  5168.5,
     "FLOOR_AREA" :  9474.7,
     "VOLUME"     : 37738.8,
-    "_alpha"     :     3,
-    "_beta"      :     0.3
+    "ATRIUM_VOLUME":5739.53
 }

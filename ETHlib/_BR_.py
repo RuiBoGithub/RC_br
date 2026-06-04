@@ -4,62 +4,41 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import json
+import pickle
 
-def make_operation_schedule(index, p):
-    rows = []
+def occupancy_based_ach(
+    hour,
+    occupancy,
+    n_people,
+    ach_vent_baseline,
+    occupied_ach=None,
+    unoccupied_ach=None,
+    occupancy_threshold=None,
+    unoccupied_ach_fraction=0.1,
+    occupancy_threshold_fraction=0.1,
+):
+    """
+    Occupancy-based ventilation controller.
 
-    for ts in index:
-        is_weekend = ts.weekday() >= 5
-        is_daytime = 8 <= ts.hour < 18
+    Default behaviour:
+    - occupied_ach = ach_vent_baseline
+    - unoccupied_ach = 10% of ach_vent_baseline
+    - occupancy_threshold = 10% of n_people
 
-        if is_weekend:
-            n_people = p.get("n_people_weekend_day", 0) if is_daytime else 0
-            atrium_ach = (
-                p.get("atrium_ach_weekend_day", 0.0)
-                if is_daytime
-                else p.get("atrium_ach_night", 0.0)
-            )
-        else:
-            n_people = p.get("n_people_weekday_day", 865) if is_daytime else 0
-            atrium_ach = (
-                p.get("atrium_ach_weekday_day", 2.0)
-                if is_daytime
-                else p.get("atrium_ach_night", 0.0)
-            )
+    Optional controller arguments can overwrite these defaults.
+    """
 
-        rows.append({
-            "Timestamp": ts,
-            "n_people": n_people,
-            "atrium_ach": atrium_ach,
-        })
+    if occupied_ach is None:
+        occupied_ach = ach_vent_baseline
 
-    return pd.DataFrame(rows).set_index("Timestamp")
+    if unoccupied_ach is None:
+        unoccupied_ach = unoccupied_ach_fraction * ach_vent_baseline
 
-def make_ach_schedule(index, p, geometry, calc_ach):
-    op = make_operation_schedule(index, p)
+    if occupancy_threshold is None:
+        occupancy_threshold = occupancy_threshold_fraction * n_people
 
-    rows = []
-
-    for ts, row in op.iterrows():
-        ach_vent, ach_infl = calc_ach(
-            n_people=row["n_people"],
-            fresh_air_lps=p.get("fresh_air_lps", 12.0),
-            atrium_ach=row["atrium_ach"],
-            atrium_volume=p.get("atrium_volume", 5739.53),
-            infl_rate_m3ph_m2=p["infl_rate_m3ph_m2"],
-            geometry=geometry,
-        )
-
-        rows.append({
-            "Timestamp": ts,
-            "n_people": row["n_people"],
-            "atrium_ach": row["atrium_ach"],
-            "ach_vent": ach_vent,
-            "ach_infl": ach_infl,
-        })
-
-    return pd.DataFrame(rows).set_index("Timestamp")
-
+    return occupied_ach if occupancy > occupancy_threshold else unoccupied_ach
+    
 def calc_ach(n_people,
              fresh_air_lps,
              atrium_ach,
@@ -67,13 +46,10 @@ def calc_ach(n_people,
              infl_rate_m3ph_m2,
              geometry):
     
-    # mechanical ventilation based on N_p [m3/s]
     mech_m3s = n_people * fresh_air_lps / 1000.0
-    # atrium natural ventilation from ACH [m3/s]
     nat_vent_m3s = atrium_ach * atrium_volume / 3600.0
     vent_m3s = mech_m3s + nat_vent_m3s
     ach_vent = 3600.0 * vent_m3s / geometry["VOLUME"]
-    # infiltration from permeability at pressure test condition [m3/h/m2]
     infl_m3ph = infl_rate_m3ph_m2 * geometry["WALL_AREA"]
     ach_infl = infl_m3ph / geometry["VOLUME"]
 
@@ -81,10 +57,10 @@ def calc_ach(n_people,
 
 def make_ach(p, geometry, calc_ach):
     return calc_ach(
-        n_people=865,
-        fresh_air_lps=12.0,
-        atrium_ach=2.0,
-        atrium_volume=5739.53,
+        n_people=p["max_occupancy"],
+        fresh_air_lps=p["fresh_air_lps"],
+        atrium_ach=p["atrium_ach"],
+        atrium_volume=geometry["ATRIUM_VOLUME"],
         infl_rate_m3ph_m2=p["infl_rate_m3ph_m2"],
         geometry=geometry,
     )
@@ -97,14 +73,13 @@ def make_heating_schedule(year, p):
     )
 
     weekday_profile = (
-        [p["t_setback_heating"]] * 8
-        + [p["t_set_heating"]] * 10
-        + [p["t_setback_heating"]] * 6
+        [p["t_setback_heating"]] * 6
+        + [p["t_set_heating"]] * 18
     )
 
     weekend_profile = (
-        [p["t_setback_heating"]] * 8
-        + [p["t_weekend_heating"]] * 10
+        [p["t_setback_heating"]] * 9
+        + [p["t_weekend_heating"]] * 9
         + [p["t_setback_heating"]] * 6
     )
 
@@ -132,7 +107,7 @@ def make_zone(
         walls_area=geometry["WALL_AREA"],
         floor_area=geometry["FLOOR_AREA"],
         room_vol=geometry["VOLUME"],
-        total_internal_area=geometry["FLOOR_AREA"] * geometry["_alpha"],
+        total_internal_area=geometry["FLOOR_AREA"] * p["_alpha"],
 
         thermal_capacitance_per_floor_area=p["thermal_capacitance_per_floor_area"],
         u_walls=p["u_walls"],
@@ -155,22 +130,6 @@ def make_zone(
         cooling_emission_system=emission_system.AirConditioning,
     )
 
-
-
-
-
-import numpy as np
-def merge_params(sampled_params, defaults):
-    """
-    Sampled parameters override deterministic default parameters.
-    """
-    p = defaults.copy()
-    p.update(sampled_params)
-    return p
-
-
-
-
 def make_hr_eff(p, mech_ach):
     hr_eff = []
     hour_i = 0
@@ -189,9 +148,14 @@ def make_hr_eff(p, mech_ach):
 
     return hr_eff
 
-import pickle
-from pathlib import Path
-import pandas as pd
+def merge_params(sampled_params, defaults):
+    """
+    Sampled parameters override deterministic default parameters.
+    """
+    p = defaults.copy()
+    p.update(sampled_params)
+    return p
+
 def summarise_uncertainty_outputs(
     outputs,
     time_col,
@@ -492,3 +456,113 @@ def load_meter_heating(
     meter_heating.name = "MeteredHeating"
 
     return meter_heating
+
+def diagnose_ventilation_glitch(df, title="Ventilation Glitch Diagnostics",
+                                start_date=None, end_date=None):
+    """
+    Create a comprehensive plot to check whether the ventilation controller
+    is producing a logic glitch (EUI ~ 0).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Merged DataFrame from annualResults and DebugZone debug log.
+        Must contain columns:
+        'OutsideTemp', 'IndoorAir', 'has_heating_demand', 'has_cooling_demand',
+        't_air_free', 't_air_test', 'delta_t_air', 'energy_demand_unrestricted',
+        'energy_demand', 'HeatingDemand', 'CoolingDemand', 'ach_vent', 'h_ve_adj',
+        and setpoints 'heating_setpoint', 'cooling_setpoint'.
+    title : str
+        Overall title for the figure.
+    start_date, end_date : str or None
+        Slice the DataFrame (e.g., '2023-01-01', '2023-01-14').
+        If None, the whole year is plotted.
+    """
+    # Slice time if requested
+    if start_date is not None:
+        df = df.loc[start_date:end_date]
+
+    # Create figure with 4 subplots (vertical stack)
+    fig, axes = plt.subplots(4, 1, figsize=(14, 14), sharex=True)
+    fig.suptitle(title, fontsize=16)
+
+    # ---- Panel 1: Temperatures & setpoints ----
+    ax = axes[0]
+    ax.plot(df.index, df['OutsideTemp'], label='Outdoor', color='tab:blue',
+            linewidth=0.8, alpha=0.7)
+    ax.plot(df.index, df['IndoorAir'], label='Indoor Air (actual)', color='tab:red',
+            linewidth=0.8)
+    ax.plot(df.index, df['t_air_free'], label='Free‑floating Tair', color='tab:orange',
+            linestyle='--', linewidth=0.8)
+    if 'heating_setpoint' in df.columns:
+        ax.plot(df.index, df['heating_setpoint'], label='Heat Setpoint',
+                color='black', linestyle=':', linewidth=0.8)
+    if 'cooling_setpoint' in df.columns:
+        ax.plot(df.index, df['cooling_setpoint'], label='Cool Setpoint',
+                color='black', linestyle='-.', linewidth=0.8)
+    ax.set_ylabel('Temperature [°C]')
+    ax.legend(loc='upper right', ncol=2)
+    ax.grid(True, alpha=0.3)
+
+    # ---- Panel 2: Demand flags (binary) ----
+    ax = axes[1]
+    # Fill areas where heating/cooling demand is True
+    heat_flag = df['has_heating_demand'].astype(int) if 'has_heating_demand' in df.columns else None
+    cool_flag = df['has_cooling_demand'].astype(int) if 'has_cooling_demand' in df.columns else None
+    if heat_flag is not None:
+        ax.fill_between(df.index, 0, heat_flag, step='post', alpha=0.5,
+                        label='Heating Demand', color='red')
+    if cool_flag is not None:
+        ax.fill_between(df.index, 0, -cool_flag, step='post', alpha=0.5,
+                        label='Cooling Demand', color='blue')
+    ax.set_ylim(-1.1, 1.1)
+    ax.set_ylabel('Demand Flag')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+
+    # ---- Panel 3: Demand & energy (if available) ----
+    ax = axes[2]
+    # Plot energy_demand_unrestricted and energy_demand
+    if 'energy_demand_unrestricted' in df.columns:
+        ax.plot(df.index, df['energy_demand_unrestricted'], label='Unrestricted Demand',
+                color='purple', linewidth=0.8, alpha=0.7)
+    if 'energy_demand' in df.columns:
+        ax.plot(df.index, df['energy_demand'], label='Actual Demand', color='green',
+                linewidth=0.8)
+    ax.set_ylabel('Power [W]')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    # If all unrestricted demands are NaN or zero, that's suspicious
+    if df['energy_demand_unrestricted'].isna().all():
+        ax.text(0.5, 0.5, 'UNRESTRICTED DEMAND ALL NaN!', transform=ax.transAxes,
+                ha='center', va='center', fontsize=14, color='red')
+
+    # ---- Panel 4: Ventilation & diagnostic slope ----
+    ax = axes[3]
+    ax2 = ax.twinx()
+    ax.plot(df.index, df['ach_vent'], label='ACH vent', color='tab:green', linewidth=0.8)
+    ax.set_ylabel('ACH vent', color='tab:green')
+    ax.tick_params(axis='y', labelcolor='tab:green')
+
+    # Plot delta_t_air (slope)
+    if 'delta_t_air' in df.columns:
+        ax2.plot(df.index, df['delta_t_air'], label='delta T (test - free)',
+                 color='tab:brown', linestyle='--', linewidth=0.8)
+        ax2.set_ylabel('delta T [K]', color='tab:brown')
+        ax2.tick_params(axis='y', labelcolor='tab:brown')
+        # Highlight near‑zero slope
+        ax2.axhline(y=0.1, color='gray', linestyle=':', alpha=0.5)
+        ax2.axhline(y=-0.1, color='gray', linestyle=':', alpha=0.5)
+
+    # Combine legends
+    lines, labels = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines + lines2, labels + labels2, loc='upper right')
+    ax.grid(True, alpha=0.3)
+
+    # Format x-axis dates
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+    fig.autofmt_xdate()
+
+    plt.tight_layout()
+    return fig, axes

@@ -1,0 +1,26 @@
+{
+  "N": 10,
+  "seed": 42,
+  "parameters": {
+    "t_set_heating": {
+      "distribution": "uniform",
+      "lower": 16.8,
+      "upper": 25.2
+    },
+    "appliance_gains": {
+      "distribution": "uniform",
+      "lower": 9.416,
+      "upper": 14.124
+    },
+    "infl_rate_m3ph_m2": {
+      "distribution": "uniform",
+      "lower": 3.2,
+      "upper": 4.8
+    },
+    "ventilation_efficiency": {
+      "distribution": "uniform",
+      "lower": 0.6,
+      "upper": 0.9
+    }
+  }
+}
