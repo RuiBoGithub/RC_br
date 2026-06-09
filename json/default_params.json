@@ -1,6 +1,6 @@
 {
-    "_alpha"     :     1,
-    "_beta"      :     0.05,
+    "_alpha"     :     12,
+    "_beta"      :     0.02,
     "u_walls": 0.19,
     "u_windows": 1.41,
     "thermal_capacitance_per_floor_area": 165000,

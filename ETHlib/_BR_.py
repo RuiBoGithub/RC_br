@@ -175,39 +175,45 @@ def summarise_uncertainty_outputs(
         })
     )
 
+from pathlib import Path
+import pickle
+import pandas as pd
 
 def run_uncertainty_with_cache(
     config_json,
     make_lhs_samples,
     run_model,
     cache_dir="cache",
+    use_cache=False,
 ):
     config_json = Path(config_json)
 
     cache_dir = Path(cache_dir)
-    cache_dir.mkdir(exist_ok=True)
-
     cache_path = cache_dir / f"{config_json.stem}_uncertainty_outputs.pkl"
     json_mtime = config_json.stat().st_mtime
 
-    print(f"Using cache file: {cache_path}")
+    if use_cache:
+        cache_dir.mkdir(exist_ok=True)
+        print(f"Using cache file: {cache_path}")
 
-    if cache_path.exists():
-        with open(cache_path, "rb") as f:
-            cached = pickle.load(f)
+        if cache_path.exists():
+            with open(cache_path, "rb") as f:
+                cached = pickle.load(f)
 
-        if cached.get("json_mtime") == json_mtime:
-            print(f"Loading cached results from: {cache_path}")
+            if cached.get("json_mtime") == json_mtime:
+                print(f"Loading cached results from: {cache_path}")
 
-            return (
-                cached["samples"],
-                cached["hourly_outputs"],
-                cached["hourly_sim_summary"],
-                cached["daily_outputs"],
-                cached["daily_sim_summary"],
-            )
+                return (
+                    cached["samples"],
+                    cached["hourly_outputs"],
+                    cached["hourly_sim_summary"],
+                    cached["daily_outputs"],
+                    cached["daily_sim_summary"],
+                )
 
-    print("JSON changed or no cache found. Running uncertainty propagation...")
+        print("JSON changed or no cache found. Running uncertainty propagation...")
+    else:
+        print("Cache disabled. Running uncertainty propagation...")
 
     samples = make_lhs_samples(config_json)
 
@@ -252,20 +258,21 @@ def run_uncertainty_with_cache(
         value_col="HeatingEnergy",
     )
 
-    cached = {
-        "config_path": str(config_json),
-        "json_mtime": json_mtime,
-        "samples": samples,
-        "hourly_outputs": hourly_outputs,
-        "hourly_sim_summary": hourly_sim_summary,
-        "daily_outputs": daily_outputs,
-        "daily_sim_summary": daily_sim_summary,
-    }
+    if use_cache:
+        cached = {
+            "config_path": str(config_json),
+            "json_mtime": json_mtime,
+            "samples": samples,
+            "hourly_outputs": hourly_outputs,
+            "hourly_sim_summary": hourly_sim_summary,
+            "daily_outputs": daily_outputs,
+            "daily_sim_summary": daily_sim_summary,
+        }
 
-    with open(cache_path, "wb") as f:
-        pickle.dump(cached, f)
+        with open(cache_path, "wb") as f:
+            pickle.dump(cached, f)
 
-    print(f"Cached results saved to: {cache_path}")
+        print(f"Cached results saved to: {cache_path}")
 
     return (
         samples,
@@ -274,7 +281,6 @@ def run_uncertainty_with_cache(
         daily_outputs,
         daily_sim_summary,
     )
-
 
 def lhs_uniform(n, d, seed=42):
     rng = np.random.default_rng(seed)
