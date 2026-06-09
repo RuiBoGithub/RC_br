@@ -108,7 +108,6 @@ def make_zone(
         floor_area=geometry["FLOOR_AREA"],
         room_vol=geometry["VOLUME"],
         total_internal_area=geometry["FLOOR_AREA"] * p["_alpha"],
-
         thermal_capacitance_per_floor_area=p["thermal_capacitance_per_floor_area"],
         u_walls=p["u_walls"],
         u_windows=p["u_windows"],
