@@ -1,0 +1,80 @@
+{
+  "selection_method": "top_n_by_metric",
+  "top_n": 10,
+  "metric": "cvrmse",
+  "source_uq_json": "_json\\_run\\JUN9\\OAT.json",
+  "selected_samples": [
+    "sample_125",
+    "sample_073",
+    "sample_112",
+    "sample_002",
+    "sample_151",
+    "sample_159",
+    "sample_107",
+    "sample_030",
+    "sample_156",
+    "sample_085"
+  ],
+  "parameters": {
+    "sample_125": {
+      "t_set_heating": 24.862350544753056,
+      "ventilation_efficiency": 0.8257012265982355,
+      "appliance_gains": 10.494112657933801,
+      "infl_rate_m3ph_m2": 3.3148726075539328
+    },
+    "sample_073": {
+      "t_set_heating": 24.070002970192323,
+      "ventilation_efficiency": 0.8585593651820556,
+      "appliance_gains": 11.451225482054772,
+      "infl_rate_m3ph_m2": 4.579480381335349
+    },
+    "sample_112": {
+      "t_set_heating": 24.293285165555815,
+      "ventilation_efficiency": 0.7036689286925976,
+      "appliance_gains": 13.153557474204357,
+      "infl_rate_m3ph_m2": 3.3738845639402295
+    },
+    "sample_002": {
+      "t_set_heating": 23.8825556892359,
+      "ventilation_efficiency": 0.8119207080906811,
+      "appliance_gains": 13.012878464268933,
+      "infl_rate_m3ph_m2": 4.59213935694723
+    },
+    "sample_151": {
+      "t_set_heating": 24.439930941634543,
+      "ventilation_efficiency": 0.6791973139440299,
+      "appliance_gains": 12.479044577367457,
+      "infl_rate_m3ph_m2": 3.2327930405328167
+    },
+    "sample_159": {
+      "t_set_heating": 23.04555903682194,
+      "ventilation_efficiency": 0.8936761831100499,
+      "appliance_gains": 9.944217047452165,
+      "infl_rate_m3ph_m2": 4.228907177088854
+    },
+    "sample_107": {
+      "t_set_heating": 24.485688928173495,
+      "ventilation_efficiency": 0.7934972216046385,
+      "appliance_gains": 12.55745558325304,
+      "infl_rate_m3ph_m2": 4.3515059115707695
+    },
+    "sample_030": {
+      "t_set_heating": 23.79517772468365,
+      "ventilation_efficiency": 0.743026006957592,
+      "appliance_gains": 13.993585662304618,
+      "infl_rate_m3ph_m2": 4.173726911592976
+    },
+    "sample_156": {
+      "t_set_heating": 23.16418948580472,
+      "ventilation_efficiency": 0.6928318129840934,
+      "appliance_gains": 12.152950480512612,
+      "infl_rate_m3ph_m2": 3.2253502654380637
+    },
+    "sample_085": {
+      "t_set_heating": 23.777507473217927,
+      "ventilation_efficiency": 0.716764283196991,
+      "appliance_gains": 13.121063787036118,
+      "infl_rate_m3ph_m2": 4.010640601772994
+    }
+  }
+}
