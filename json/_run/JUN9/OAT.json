@@ -7,6 +7,11 @@
       "lower": 16.8,
       "upper": 25.2
     },
+    "ventilation_efficiency": {
+      "distribution": "uniform",
+      "lower": 0.6,
+      "upper": 0.9
+    },
     "appliance_gains": {
       "distribution": "uniform",
       "lower": 9.416,
@@ -16,11 +21,6 @@
       "distribution": "uniform",
       "lower": 3.2,
       "upper": 4.8
-    },
-    "ventilation_efficiency": {
-      "distribution": "uniform",
-      "lower": 0.6,
-      "upper": 0.9
     }
   }
 }

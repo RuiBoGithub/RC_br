@@ -5,7 +5,40 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import json
 import pickle
+# in _BR_.py
 
+from dataclasses import dataclass
+from pathlib import Path
+import sys
+import json
+import pandas as pd
+
+from radiation import Location, Window
+
+
+@dataclass
+class RCCase:
+    year: int
+    loc_json: Path
+    geo_json: Path
+    default_json: Path
+    epw_path: Path
+    occupancy_profile_csv: Path
+    Zone: object
+    supply_system: object
+    emission_system: object
+
+    def __post_init__(self):
+        cityloc = json.loads(Path(self.loc_json).read_text())
+
+        self.latitude_deg = cityloc["latitude_deg"]
+        self.longitude_deg = cityloc["longitude_deg"]
+
+        self.location = Location(epwfile_path=self.epw_path)
+        self.geometry = json.loads(Path(self.geo_json).read_text())
+        self.default_params = json.loads(Path(self.default_json).read_text())
+        self.occupancy_profile = pd.read_csv(self.occupancy_profile_csv)
+        
 def occupancy_based_ach(
     hour,
     occupancy,
@@ -73,8 +106,9 @@ def make_heating_schedule(year, p):
     )
 
     weekday_profile = (
-        [p["t_setback_heating"]] * 6
-        + [p["t_set_heating"]] * 18
+        [p["t_setback_heating"]] * 8
+        + [p["t_set_heating"]] * 11 +
+        [p["t_setback_heating"]] * 5
     )
 
     weekend_profile = (
@@ -174,9 +208,197 @@ def summarise_uncertainty_outputs(
         })
     )
 
-from pathlib import Path
+
+
+# in _BR_.py
+def run_model_case(
+    case,
+    sampled_params=None,
+    controller_mode="original",
+    occupancy_controller_params=None,
+):
+    if sampled_params is None:
+        sampled_params = {}
+
+    return run_model(
+        sampled_params=sampled_params,
+        default_params=case.default_params,
+        geometry=case.geometry,
+        occupancy_profile=case.occupancy_profile,
+        location=case.location,
+        latitude_deg=case.latitude_deg,
+        longitude_deg=case.longitude_deg,
+        year=case.year,
+        controller_mode=controller_mode,
+        occupancy_controller_params=occupancy_controller_params,
+        Zone=case.Zone,
+        supply_system=case.supply_system,
+        emission_system=case.emission_system,
+    )
+
+def run_model(
+    sampled_params,
+    default_params,
+    geometry,
+    occupancy_profile,
+    location,
+    latitude_deg,
+    longitude_deg,
+    year=2023,
+    controller_mode="original",
+    occupancy_controller_params=None,
+    Zone=None,
+    supply_system=None,
+    emission_system=None,
+):
+    p = merge_params(sampled_params, default_params)
+
+    HeatingDemand, HeatingEnergy, CoolingDemand, CoolingEnergy = [], [], [], []
+    ElectricityOut, IndoorAir, OutsideTemp, SolarGains, COP = [], [], [], [], []
+    ach_vent_hourly, ach_infl_hourly, h_ve_adj_hourly = [], [], []
+
+    t_m_prev = 20.0
+
+    heating_schedule = make_heating_schedule(year=year, p=p)
+
+    ach_vent_baseline, ach_infl_baseline = make_ach(
+        p=p,
+        geometry=geometry,
+        calc_ach=calc_ach,
+    )
+
+    base_occupancy_controller_params = {
+        "n_people": p["max_occupancy"],
+        "ach_vent_baseline": ach_vent_baseline,
+    }
+
+    if occupancy_controller_params is not None:
+        base_occupancy_controller_params.update(occupancy_controller_params)
+
+    occupancy_controller_params = base_occupancy_controller_params
+
+    Office = make_zone(
+        p=p,
+        geometry=geometry,
+        ach_vent=ach_vent_baseline,
+        ach_infl=ach_infl_baseline,
+        Zone=Zone,
+        supply_system=supply_system,
+        emission_system=emission_system,
+    )
+
+    SouthWindow = Window(
+        azimuth_tilt=0,
+        alititude_tilt=90,
+        glass_solar_transmittance=0.3,
+        glass_light_transmittance=0.3,
+        area=geometry["WINDOW_AREA"] * p["_beta"],
+    )
+
+    for hour in range(8760):
+        occupancy = occupancy_profile.loc[hour, "People"] * p["max_occupancy"]
+
+        if controller_mode == "original":
+            desired_ach = ach_vent_baseline
+
+        elif controller_mode == "occupancy":
+            desired_ach = occupancy_based_ach(
+                hour=hour,
+                occupancy=occupancy,
+                **occupancy_controller_params,
+            )
+
+        else:
+            raise ValueError(
+                f"Unknown controller_mode: {controller_mode}. "
+                "Use 'original' or 'occupancy'."
+            )
+
+        Office.ach_vent = desired_ach
+
+        ach_vent_hourly.append(Office.ach_vent)
+        ach_infl_hourly.append(Office.ach_infl)
+        h_ve_adj_hourly.append(Office.h_ve_adj)
+
+        Office.t_set_heating = heating_schedule[hour]
+
+        internal_gains = (
+            occupancy * p["gain_per_person"]
+            + p["appliance_gains"] * Office.floor_area
+        )
+
+        t_out = location.weather_data["drybulb_C"][hour]
+
+        altitude, azimuth = location.calc_sun_position(
+            latitude_deg=latitude_deg,
+            longitude_deg=longitude_deg,
+            year=year,
+            hoy=hour,
+        )
+
+        SouthWindow.calc_solar_gains(
+            sun_altitude=altitude,
+            sun_azimuth=azimuth,
+            normal_direct_radiation=location.weather_data["dirnorrad_Whm2"][hour],
+            horizontal_diffuse_radiation=location.weather_data["difhorrad_Whm2"][hour],
+        )
+
+        SouthWindow.calc_illuminance(
+            sun_altitude=altitude,
+            sun_azimuth=azimuth,
+            normal_direct_illuminance=location.weather_data["dirnorillum_lux"][hour],
+            horizontal_diffuse_illuminance=location.weather_data["difhorillum_lux"][hour],
+        )
+
+        Office.solve_energy(
+            internal_gains=internal_gains,
+            solar_gains=SouthWindow.solar_gains,
+            t_out=t_out,
+            t_m_prev=t_m_prev,
+        )
+
+        Office.solve_lighting(
+            illuminance=SouthWindow.transmitted_illuminance,
+            occupancy=occupancy,
+        )
+
+        t_m_prev = Office.t_m_next
+
+        fa = geometry["FLOOR_AREA"]
+
+        HeatingDemand.append(Office.heating_demand / 1000.0 / fa)
+        HeatingEnergy.append(Office.heating_energy / 1000.0 / fa)
+        CoolingDemand.append(Office.cooling_demand / 1000.0 / fa)
+        CoolingEnergy.append(Office.cooling_energy / 1000.0 / fa)
+        ElectricityOut.append(Office.electricity_out / 1000.0 / fa)
+        IndoorAir.append(Office.t_air)
+        OutsideTemp.append(t_out)
+        SolarGains.append(SouthWindow.solar_gains)
+        COP.append(Office.cop)
+
+    annualResults = pd.DataFrame(
+        {
+            "HeatingDemand": HeatingDemand,
+            "HeatingEnergy": HeatingEnergy,
+            "CoolingDemand": CoolingDemand,
+            "CoolingEnergy": CoolingEnergy,
+            "ElectricityOut": ElectricityOut,
+            "IndoorAir": IndoorAir,
+            "OutsideTemp": OutsideTemp,
+            "SolarGains": SolarGains,
+            "COP": COP,
+            "ach_vent": ach_vent_hourly,
+            "ach_infl": ach_infl_hourly,
+            "h_ve_adj": h_ve_adj_hourly,
+        },
+        index=pd.date_range(f"{year}-01-01", periods=8760, freq="h"),
+    )
+
+    annual_EUI = annualResults[["HeatingEnergy", "CoolingEnergy"]].sum()
+
+    return annualResults, annual_EUI, Office
+
 import pickle
-import pandas as pd
 
 def run_uncertainty_with_cache(
     config_json,
