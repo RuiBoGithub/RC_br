@@ -257,7 +257,9 @@ def run_model(
     ElectricityOut, IndoorAir, OutsideTemp, SolarGains, COP = [], [], [], [], []
     ach_vent_hourly, ach_infl_hourly, h_ve_adj_hourly = [], [], []
 
+    # Initial 3R2C states, Celsius
     t_m_prev = 20.0
+    t_air_prev = 20.0
 
     heating_schedule = make_heating_schedule(year=year, p=p)
 
@@ -287,6 +289,12 @@ def run_model(
         emission_system=emission_system,
     )
 
+    # Initialise 3R2C state after Office has been created
+    Office.t_m = t_m_prev
+    Office.t_air = t_air_prev
+    Office.t_m_next = t_m_prev
+    Office.t_air_next = t_air_prev
+
     SouthWindow = Window(
         azimuth_tilt=0,
         alititude_tilt=90,
@@ -315,6 +323,10 @@ def run_model(
             )
 
         Office.ach_vent = desired_ach
+
+        # Important if ach_vent is not implemented as a property setter
+        if hasattr(Office, "update_ventilation_conductance"):
+            Office.update_ventilation_conductance()
 
         ach_vent_hourly.append(Office.ach_vent)
         ach_infl_hourly.append(Office.ach_infl)
@@ -355,6 +367,7 @@ def run_model(
             solar_gains=SouthWindow.solar_gains,
             t_out=t_out,
             t_m_prev=t_m_prev,
+            t_air_prev=t_air_prev,
         )
 
         Office.solve_lighting(
@@ -362,7 +375,9 @@ def run_model(
             occupancy=occupancy,
         )
 
-        t_m_prev = Office.t_m_next
+        # Carry both 3R2C states to the next hour
+        t_m_prev = Office.t_m
+        t_air_prev = Office.t_air
 
         fa = geometry["FLOOR_AREA"]
 
