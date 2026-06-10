@@ -102,20 +102,40 @@ def make_heating_schedule(year, p):
     heating_index = pd.date_range(
         start=f"{year}-01-01 00:00",
         end=f"{year}-12-31 23:00",
-        freq="h"
+        freq="h",
     )
 
-    weekday_profile = (
-        [p["t_setback_heating"]] * 8
-        + [p["t_set_heating"]] * 11 +
-        [p["t_setback_heating"]] * 5
-    )
+    schedule_mode = p.get("heating_schedule_mode", "original")
 
-    weekend_profile = (
-        [p["t_setback_heating"]] * 9
-        + [p["t_weekend_heating"]] * 9
-        + [p["t_setback_heating"]] * 6
-    )
+    if schedule_mode == "original":
+        weekday_profile = (
+            [p["t_setback_heating"]] * 8
+            + [p["t_set_heating"]] * 11
+            + [p["t_setback_heating"]] * 5
+        )
+
+        weekend_profile = (
+            [p["t_setback_heating"]] * 9
+            + [p["t_weekend_heating"]] * 9
+            + [p["t_setback_heating"]] * 6
+        )
+
+    elif schedule_mode == "8_8_8":
+        weekday_profile = (
+            [p["t_setback_heating"]] * 8
+            + [p["t_set_heating"]] * 8
+            + [p["t_setback_heating"]] * 8
+        )
+
+        weekend_profile = (
+            [p["t_setback_heating"]] * 24
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown heating_schedule_mode: {schedule_mode}. "
+            "Use 'original' or '8_8_8'."
+        )
 
     heating_schedule = []
 
