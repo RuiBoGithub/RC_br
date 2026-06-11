@@ -370,12 +370,20 @@ def run_model(
         h_ve_adj_hourly.append(Office.h_ve_adj)
 
         Office.t_set_heating = heating_schedule[hour]
+        #_+_#
+        occupancy_fraction = occupancy_profile.loc[hour, "People"]
+        occupancy = occupancy_fraction * p["max_occupancy"]
 
-        internal_gains = (
-            occupancy * p["gain_per_person"]
-            + p["appliance_gains"] * Office.floor_area
+        people_gains = occupancy * p["gain_per_person"]
+
+        appliance_gains = (
+            occupancy_fraction
+            * p["appliance_gains"]
+            * Office.occ_area
         )
 
+        internal_gains = people_gains + appliance_gains
+        #_+_#
         t_out = location.weather_data["drybulb_C"][hour]
 
         altitude, azimuth = location.calc_sun_position(

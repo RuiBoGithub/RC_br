@@ -13,6 +13,7 @@ class DebugZone(Zone):
         # Extract ventilation parameters from kwargs before passing to super()
         self._ach_vent = kwargs.pop('ach_vent', 1.5)
         self._ach_infl = kwargs.pop('ach_infl', 0.5)
+        self._occ_area = kwargs.pop('occ_area', None)
         self._ventilation_efficiency = kwargs.get('ventilation_efficiency', 0.6)
 
         super().__init__(*args, **kwargs)
@@ -30,7 +31,11 @@ class DebugZone(Zone):
         ach_tot = self._ach_infl + self._ach_vent
         b_ek = (1 - (self._ach_vent / ach_tot) * self._ventilation_efficiency)
         self.h_ve_adj = 1200 * b_ek * self.room_vol * (ach_tot / 3600)
-
+    @property
+    def occ_area(self):
+        if self._occ_area is None:
+            return self.floor_area
+        return self._occ_area
     @property
     def ach_vent(self):
         return self._ach_vent

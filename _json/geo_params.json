@@ -2,6 +2,7 @@
     "WINDOW_AREA":  1501.3,
     "WALL_AREA"  :  5168.5,
     "FLOOR_AREA" :  9474.7,
+    "OCC_AREA":6783.7,
     "VOLUME"     : 37738.8,
     "ATRIUM_VOLUME":5739.53
 }
