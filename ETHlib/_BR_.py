@@ -72,19 +72,27 @@ def occupancy_based_ach(
 
     return occupied_ach if occupancy > occupancy_threshold else unoccupied_ach
     
-def calc_ach(n_people,
-             fresh_air_lps,
-             atrium_ach,
-             atrium_volume,
-             infl_rate_m3ph_m2,
-             geometry):
-    
+def calc_ach(
+    n_people,
+    fresh_air_lps,
+    atrium_ach,
+    atrium_volume,
+    infl_rate_m3ph_m2,
+    geometry,
+    window_opening_ach=0.0,
+):
+
     mech_m3s = n_people * fresh_air_lps / 1000.0
+    ach_vent = 3600.0 * mech_m3s / geometry["VOLUME"]
+
+    # Atrium / natural ventilation
     nat_vent_m3s = atrium_ach * atrium_volume / 3600.0
-    vent_m3s = mech_m3s + nat_vent_m3s
-    ach_vent = 3600.0 * vent_m3s / geometry["VOLUME"]
+    ach_atrium = 3600.0 * nat_vent_m3s / geometry["VOLUME"]
     infl_m3ph = infl_rate_m3ph_m2 * geometry["WALL_AREA"]
-    ach_infl = infl_m3ph / geometry["VOLUME"]
+    ach_background_infl = infl_m3ph / geometry["VOLUME"]
+
+    # Total non-mechanical air exchange
+    ach_infl = ach_background_infl + ach_atrium + window_opening_ach
 
     return ach_vent, ach_infl
 
@@ -95,6 +103,7 @@ def make_ach(p, geometry, calc_ach):
         atrium_ach=p["atrium_ach"],
         atrium_volume=geometry["ATRIUM_VOLUME"],
         infl_rate_m3ph_m2=p["infl_rate_m3ph_m2"],
+        window_opening_ach=p.get("window_opening_ach", 0.0),
         geometry=geometry,
     )
 
@@ -183,21 +192,32 @@ def make_zone(
         cooling_emission_system=emission_system.AirConditioning,
     )
 
-def make_hr_eff(p, mech_ach):
-    hr_eff = []
-    hour_i = 0
+def make_hr_eff_schedule(p):
+    """
+    Create an hourly heat-recovery efficiency schedule.
 
+    Winter months use p["ventilation_efficiency"].
+    Non-winter months use 0.0.
+    """
+
+    hr_eff = []
     winter_eff = p["ventilation_efficiency"]
 
-    for m_days, eff_winter in [
-        (31, winter_eff), (28, winter_eff), (31, winter_eff),
-        (30, winter_eff), (31, 0.0), (30, 0.0),
-        (31, 0.0), (31, 0.0), (30, 0.0),
-        (31, winter_eff), (30, winter_eff), (31, winter_eff),
+    for m_days, eff in [
+        (31, winter_eff),
+        (28, winter_eff),
+        (31, winter_eff),
+        (30, winter_eff),
+        (31, 0.0),
+        (30, 0.0),
+        (31, 0.0),
+        (31, 0.0),
+        (30, 0.0),
+        (31, winter_eff),
+        (30, winter_eff),
+        (31, winter_eff),
     ]:
-        for _ in range(m_days * 24):
-            hr_eff.append(eff_winter if mech_ach[hour_i] > 0 else 0.0)
-            hour_i += 1
+        hr_eff.extend([eff] * m_days * 24)
 
     return hr_eff
 
@@ -287,6 +307,11 @@ def run_model(
         calc_ach=calc_ach,
     )
 
+    #_+_#
+    hr_eff_schedule = make_hr_eff_schedule(
+        p=p
+    )
+
     base_occupancy_controller_params = {
         "n_people": p["max_occupancy"],
         "ach_vent_baseline": ach_vent_baseline,
@@ -335,6 +360,10 @@ def run_model(
             )
 
         Office.ach_vent = desired_ach
+        #_+_#
+        Office.ventilation_efficiency = (
+            hr_eff_schedule[hour] if desired_ach > 0 else 0.0
+        )
 
         ach_vent_hourly.append(Office.ach_vent)
         ach_infl_hourly.append(Office.ach_infl)
