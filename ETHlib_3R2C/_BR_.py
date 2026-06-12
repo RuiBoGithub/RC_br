@@ -308,9 +308,10 @@ def run_model(
 
         if controller_mode == "original":
             desired_ach = ach_vent_baseline
-
+        # +_+ #
         elif controller_mode == "occupancy":
             desired_ach = occupancy_based_ach(
+                year=year,
                 hour=hour,
                 occupancy=occupancy,
                 **occupancy_controller_params,

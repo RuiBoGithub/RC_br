@@ -4,98 +4,103 @@
   "parameters": {
     "_alpha": {
       "distribution": "uniform",
-      "lower": 9.6,
-      "upper": 14.4
+      "lower": 4.5,
+      "upper": 5.5
     },
     "_beta": {
       "distribution": "uniform",
-      "lower": 0.016,
-      "upper": 0.024
+      "lower": 0.315,
+      "upper": 0.385
     },
     "u_walls": {
       "distribution": "uniform",
-      "lower": 0.152,
-      "upper": 0.228
+      "lower": 0.171,
+      "upper": 0.209
     },
     "u_windows": {
       "distribution": "uniform",
-      "lower": 1.128,
-      "upper": 1.692
+      "lower": 1.269,
+      "upper": 1.551
     },
     "thermal_capacitance_per_floor_area": {
       "distribution": "uniform",
-      "lower": 80000,
-      "upper": 370000
+      "lower": 100000,
+      "upper": 200000
     },
     "infl_rate_m3ph_m2": {
       "distribution": "uniform",
-      "lower": 3.2,
-      "upper": 4.8
+      "lower": 2.7,
+      "upper": 3.3
     },
     "gain_per_person": {
       "distribution": "uniform",
-      "lower": 80.0,
-      "upper": 120.0
+      "lower": 90.0,
+      "upper": 110.0
     },
     "appliance_gains": {
       "distribution": "uniform",
-      "lower": 9.416,
-      "upper": 14.124
+      "lower": 15.2,
+      "upper": 16.8
     },
     "max_occupancy": {
       "distribution": "uniform",
-      "lower": 692.0,
-      "upper": 1038.0
+      "lower": 688.5,
+      "upper": 841.5
     },
     "fresh_air_lps": {
       "distribution": "uniform",
-      "lower": 9.6,
-      "upper": 14.4
+      "lower": 8.1,
+      "upper": 9.9
     },
     "atrium_ach": {
       "distribution": "uniform",
-      "lower": 1.6,
-      "upper": 2.4
+      "lower": 1.8,
+      "upper": 2.2
+    },
+    "window_opening_ach": {
+      "distribution": "uniform",
+      "lower": 0.01,
+      "upper": 0.09
     },
     "unoccupied_ach_fraction": {
       "distribution": "uniform",
-      "lower": 0.4,
-      "upper": 0.6
+      "lower": 0.0,
+      "upper": 0.0
     },
     "occupancy_threshold_fraction": {
       "distribution": "uniform",
-      "lower": 0.08,
-      "upper": 0.12
+      "lower": 0.09,
+      "upper": 0.11
     },
     "t_set_heating": {
       "distribution": "uniform",
-      "lower": 16.8,
-      "upper": 25.2
+      "lower": 18.9,
+      "upper": 23.1
     },
     "t_weekend_heating": {
       "distribution": "uniform",
-      "lower": 16.8,
-      "upper": 25.2
+      "lower": 16.2,
+      "upper": 19.8
     },
     "t_setback_heating": {
       "distribution": "uniform",
-      "lower": 14.4,
-      "upper": 21.6
+      "lower": 13.5,
+      "upper": 16.5
     },
     "t_set_cooling": {
       "distribution": "uniform",
-      "lower": 22.4,
-      "upper": 33.6
+      "lower": 25.2,
+      "upper": 30.8
     },
     "lighting_load": {
       "distribution": "uniform",
-      "lower": 3.4,
-      "upper": 5.1
+      "lower": 0.0,
+      "upper": 0.0
     },
     "ventilation_efficiency": {
       "distribution": "uniform",
-      "lower": 0.6,
-      "upper": 0.9
+      "lower": 0.675,
+      "upper": 0.825
     }
   }
 }

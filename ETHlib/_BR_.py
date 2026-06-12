@@ -38,7 +38,40 @@ class RCCase:
         self.geometry = json.loads(Path(self.geo_json).read_text())
         self.default_params = json.loads(Path(self.default_json).read_text())
         self.occupancy_profile = pd.read_csv(self.occupancy_profile_csv)
-        
+
+def is_design_occupied_time(year=2023):
+    """
+    Return the manager-designed occupied schedule for the full year.
+    | Hour ranges use [start, end), where (9, 18) means 09:00-17:00.
+    """
+    weekday_hours = (9, 18)
+    saturday_hours = None
+    sunday_hours = None
+
+    idx = pd.date_range(
+        start=f"{year}-01-01 00:00",
+        end=f"{year}-12-31 23:00",
+        freq="h",
+    )
+
+    occupied_schedule = []
+
+    for t in idx:
+        if t.weekday() < 5:
+            hours = weekday_hours
+        elif t.weekday() == 5:
+            hours = saturday_hours
+        else:
+            hours = sunday_hours
+
+        if hours is None:
+            occupied_schedule.append(False)
+        else:
+            start_hour, end_hour = hours
+            occupied_schedule.append(start_hour <= t.hour < end_hour)
+
+    return occupied_schedule
+
 def occupancy_based_ach(
     hour,
     occupancy,
@@ -49,16 +82,19 @@ def occupancy_based_ach(
     occupancy_threshold=None,
     unoccupied_ach_fraction=0.1,
     occupancy_threshold_fraction=0.1,
+    year=2023,
 ):
     """
-    Occupancy-based ventilation controller.
+    Schedule-based ventilation controller.
 
-    Default behaviour:
-    - occupied_ach = ach_vent_baseline
-    - unoccupied_ach = 10% of ach_vent_baseline
-    - occupancy_threshold = 10% of n_people
+    The controller uses the manager-designed occupied schedule from
+    is_design_occupied_time(year).
 
-    Optional controller arguments can overwrite these defaults.
+    If the current hour is within the designed occupied schedule:
+        use occupied_ach
+
+    Otherwise:
+        use unoccupied_ach
     """
 
     if occupied_ach is None:
@@ -70,8 +106,10 @@ def occupancy_based_ach(
     if occupancy_threshold is None:
         occupancy_threshold = occupancy_threshold_fraction * n_people
 
-    return occupied_ach if occupancy > occupancy_threshold else unoccupied_ach
-    
+    occupied_schedule = is_design_occupied_time(year)
+
+    return occupied_ach if occupied_schedule[hour] else unoccupied_ach
+   
 def calc_ach(
     n_people,
     fresh_air_lps,
@@ -192,32 +230,33 @@ def make_zone(
         cooling_emission_system=emission_system.AirConditioning,
     )
 
-def make_hr_eff_schedule(p):
+
+def make_hr_eff_schedule(p, year=2023):
     """
     Create an hourly heat-recovery efficiency schedule.
 
-    Winter months use p["ventilation_efficiency"].
-    Non-winter months use 0.0.
+    Heat recovery is active only in winter months and during manager-designed
+    occupied hours. The efficiency value is p["ventilation_efficiency"].
     """
 
-    hr_eff = []
     winter_eff = p["ventilation_efficiency"]
+    winter_months = [1, 2, 3, 10, 11, 12]
 
-    for m_days, eff in [
-        (31, winter_eff),
-        (28, winter_eff),
-        (31, winter_eff),
-        (30, winter_eff),
-        (31, 0.0),
-        (30, 0.0),
-        (31, 0.0),
-        (31, 0.0),
-        (30, 0.0),
-        (31, winter_eff),
-        (30, winter_eff),
-        (31, winter_eff),
-    ]:
-        hr_eff.extend([eff] * m_days * 24)
+    occupied_schedule = is_design_occupied_time(year)
+
+    idx = pd.date_range(
+        start=f"{year}-01-01 00:00",
+        end=f"{year}-12-31 23:00",
+        freq="h",
+    )
+
+    hr_eff = []
+
+    for i, t in enumerate(idx):
+        if t.month in winter_months and occupied_schedule[i]:
+            hr_eff.append(winter_eff)
+        else:
+            hr_eff.append(0.0)
 
     return hr_eff
 
@@ -309,7 +348,8 @@ def run_model(
 
     #_+_#
     hr_eff_schedule = make_hr_eff_schedule(
-        p=p
+        p=p,
+        year=year
     )
 
     base_occupancy_controller_params = {
