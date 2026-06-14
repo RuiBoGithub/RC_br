@@ -31,6 +31,7 @@ class DebugZone(Zone):
         ach_tot = self._ach_infl + self._ach_vent
         b_ek = (1 - (self._ach_vent / ach_tot) * self._ventilation_efficiency)
         self.h_ve_adj = 1200 * b_ek * self.room_vol * (ach_tot / 3600)
+        
     @property
     def occ_area(self):
         if self._occ_area is None:

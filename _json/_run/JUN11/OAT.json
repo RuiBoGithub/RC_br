@@ -7,20 +7,20 @@
       "lower": 18.9,
       "upper": 23.1
     },
-    "ventilation_efficiency": {
+    "window_opening_ach": {
       "distribution": "uniform",
-      "lower": 0.675,
-      "upper": 0.825
+      "lower": 0.025,
+      "upper": 0.225
     },
     "infl_rate_m3ph_m2": {
       "distribution": "uniform",
-      "lower": 2.7,
-      "upper": 3.3
+      "lower": 3.6,
+      "upper": 4.4
     },
-    "window_opening_ach": {
+    "atrium_ach": {
       "distribution": "uniform",
-      "lower": 0.01,
-      "upper": 0.09
+      "lower": 1.8,
+      "upper": 2.2
     }
   }
 }

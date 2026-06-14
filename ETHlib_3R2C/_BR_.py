@@ -1,20 +1,12 @@
-import sys
 from pathlib import Path
+from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import json
 import pickle
-# in _BR_.py
-
-from dataclasses import dataclass
-from pathlib import Path
-import sys
 import json
-import pandas as pd
-
 from radiation import Location, Window
-
 
 @dataclass
 class RCCase:
@@ -38,56 +30,77 @@ class RCCase:
         self.geometry = json.loads(Path(self.geo_json).read_text())
         self.default_params = json.loads(Path(self.default_json).read_text())
         self.occupancy_profile = pd.read_csv(self.occupancy_profile_csv)
-        
-def occupancy_based_ach(
+def occupancy_default(year=2023):
+    """
+    This is manager-defined occupancy schedule for the office building. 
+    NOT equivalent to the actual occupancy.
+    | Hour ranges use [start, end), where (9, 18) means 09:00-17:00.
+    """
+    weekday_hours = (9, 18)
+    saturday_hours = None
+    sunday_hours = None
+
+    idx = pd.date_range(
+        start=f"{year}-01-01 00:00",
+        end=f"{year}-12-31 23:00",
+        freq="h",
+    )
+
+    occupied_schedule = []
+
+    for t in idx:
+        if t.weekday() < 5:
+            hours = weekday_hours
+        elif t.weekday() == 5:
+            hours = saturday_hours
+        else:
+            hours = sunday_hours
+
+        if hours is None:
+            occupied_schedule.append(False)
+        else:
+            start_hour, end_hour = hours
+            occupied_schedule.append(start_hour <= t.hour < end_hour)
+
+    return occupied_schedule
+def occupancy_default_ach(
     hour,
-    occupancy,
-    n_people,
+    occupied_schedule,
     ach_vent_baseline,
     occupied_ach=None,
     unoccupied_ach=None,
-    occupancy_threshold=None,
-    unoccupied_ach_fraction=0.1,
-    occupancy_threshold_fraction=0.1,
+    unoccupied_ach_fraction=0.01,
 ):
-    """
-    Occupancy-based ventilation controller.
-
-    Default behaviour:
-    - occupied_ach = ach_vent_baseline
-    - unoccupied_ach = 10% of ach_vent_baseline
-    - occupancy_threshold = 10% of n_people
-
-    Optional controller arguments can overwrite these defaults.
-    """
-
     if occupied_ach is None:
         occupied_ach = ach_vent_baseline
 
     if unoccupied_ach is None:
         unoccupied_ach = unoccupied_ach_fraction * ach_vent_baseline
 
-    if occupancy_threshold is None:
-        occupancy_threshold = occupancy_threshold_fraction * n_people
+    return occupied_ach if occupied_schedule[hour] else unoccupied_ach
+def calc_ach(
+    n_people,
+    fresh_air_lps,
+    atrium_ach,
+    atrium_volume,
+    infl_rate_m3ph_m2,
+    geometry,
+    window_opening_ach=0.0,
+):
 
-    return occupied_ach if occupancy > occupancy_threshold else unoccupied_ach
-    
-def calc_ach(n_people,
-             fresh_air_lps,
-             atrium_ach,
-             atrium_volume,
-             infl_rate_m3ph_m2,
-             geometry):
-    
     mech_m3s = n_people * fresh_air_lps / 1000.0
+    ach_vent = 3600.0 * mech_m3s / geometry["VOLUME"]
+
+    # Atrium / natural ventilation
     nat_vent_m3s = atrium_ach * atrium_volume / 3600.0
-    vent_m3s = mech_m3s + nat_vent_m3s
-    ach_vent = 3600.0 * vent_m3s / geometry["VOLUME"]
+    ach_atrium = 3600.0 * nat_vent_m3s / geometry["VOLUME"]
     infl_m3ph = infl_rate_m3ph_m2 * geometry["WALL_AREA"]
-    ach_infl = infl_m3ph / geometry["VOLUME"]
+    ach_background_infl = infl_m3ph / geometry["VOLUME"]
+
+    # Total non-mechanical air exchange
+    ach_infl = ach_background_infl + ach_atrium + window_opening_ach
 
     return ach_vent, ach_infl
-
 def make_ach(p, geometry, calc_ach):
     return calc_ach(
         n_people=p["max_occupancy"],
@@ -95,27 +108,75 @@ def make_ach(p, geometry, calc_ach):
         atrium_ach=p["atrium_ach"],
         atrium_volume=geometry["ATRIUM_VOLUME"],
         infl_rate_m3ph_m2=p["infl_rate_m3ph_m2"],
+        window_opening_ach=p.get("window_opening_ach", 0.0),
         geometry=geometry,
     )
+def make_hr_eff_schedule(p, year=2023):
+    """
+    Create an hourly heat-recovery efficiency schedule.
 
+    Heat recovery is active only in winter months and during manager-designed
+    occupied hours. The efficiency value is p["ventilation_efficiency"].
+    """
+
+    winter_eff = p["ventilation_efficiency"]
+    winter_months = [1, 2, 3, 10, 11, 12]
+
+    occupied_schedule = occupancy_default(year)
+
+    idx = pd.date_range(
+        start=f"{year}-01-01 00:00",
+        end=f"{year}-12-31 23:00",
+        freq="h",
+    )
+
+    hr_eff = []
+
+    for i, t in enumerate(idx):
+        if t.month in winter_months and occupied_schedule[i]:
+            hr_eff.append(winter_eff)
+        else:
+            hr_eff.append(0.0)
+
+    return hr_eff
 def make_heating_schedule(year, p):
     heating_index = pd.date_range(
         start=f"{year}-01-01 00:00",
         end=f"{year}-12-31 23:00",
-        freq="h"
+        freq="h",
     )
 
-    weekday_profile = (
-        [p["t_setback_heating"]] * 8
-        + [p["t_set_heating"]] * 11 +
-        [p["t_setback_heating"]] * 5
-    )
+    schedule_mode = p.get("heating_schedule_mode", "original")
 
-    weekend_profile = (
-        [p["t_setback_heating"]] * 9
-        + [p["t_weekend_heating"]] * 9
-        + [p["t_setback_heating"]] * 6
-    )
+    if schedule_mode == "original":
+        weekday_profile = (
+            [p["t_setback_heating"]] * 8
+            + [p["t_set_heating"]] * 11
+            + [p["t_setback_heating"]] * 5
+        )
+
+        weekend_profile = (
+            [p["t_setback_heating"]] * 9
+            + [p["t_weekend_heating"]] * 9
+            + [p["t_setback_heating"]] * 6
+        )
+
+    elif schedule_mode == "8_8_8":
+        weekday_profile = (
+            [p["t_setback_heating"]] * 8
+            + [p["t_set_heating"]] * 8
+            + [p["t_setback_heating"]] * 8
+        )
+
+        weekend_profile = (
+            [p["t_setback_heating"]] * 24
+        )
+
+    else:
+        raise ValueError(
+            f"Unknown heating_schedule_mode: {schedule_mode}. "
+            "Use 'original' or '8_8_8'."
+        )
 
     heating_schedule = []
 
@@ -162,25 +223,7 @@ def make_zone(
         heating_emission_system=emission_system.AirConditioning,
         cooling_emission_system=emission_system.AirConditioning,
     )
-
-def make_hr_eff(p, mech_ach):
-    hr_eff = []
-    hour_i = 0
-
-    winter_eff = p["ventilation_efficiency"]
-
-    for m_days, eff_winter in [
-        (31, winter_eff), (28, winter_eff), (31, winter_eff),
-        (30, winter_eff), (31, 0.0), (30, 0.0),
-        (31, 0.0), (31, 0.0), (30, 0.0),
-        (31, winter_eff), (30, winter_eff), (31, winter_eff),
-    ]:
-        for _ in range(m_days * 24):
-            hr_eff.append(eff_winter if mech_ach[hour_i] > 0 else 0.0)
-            hour_i += 1
-
-    return hr_eff
-
+# merge_params #
 def merge_params(sampled_params, defaults):
     """
     Sampled parameters override deterministic default parameters.
@@ -263,15 +306,23 @@ def run_model(
 
     heating_schedule = make_heating_schedule(year=year, p=p)
 
+    occupied_schedule = occupancy_default(year)
+
     ach_vent_baseline, ach_infl_baseline = make_ach(
         p=p,
         geometry=geometry,
         calc_ach=calc_ach,
     )
 
+    #_+_#
+    hr_eff_schedule = make_hr_eff_schedule(
+        p=p,
+        year=year
+    )
+
     base_occupancy_controller_params = {
-        "n_people": p["max_occupancy"],
         "ach_vent_baseline": ach_vent_baseline,
+        "occupied_schedule": occupied_schedule,
     }
 
     if occupancy_controller_params is not None:
@@ -308,15 +359,11 @@ def run_model(
 
         if controller_mode == "original":
             desired_ach = ach_vent_baseline
-        # +_+ #
         elif controller_mode == "occupancy":
-            desired_ach = occupancy_based_ach(
-                year=year,
+            desired_ach = occupancy_default_ach(
                 hour=hour,
-                occupancy=occupancy,
                 **occupancy_controller_params,
             )
-
         else:
             raise ValueError(
                 f"Unknown controller_mode: {controller_mode}. "
@@ -324,22 +371,30 @@ def run_model(
             )
 
         Office.ach_vent = desired_ach
-
-        # Important if ach_vent is not implemented as a property setter
-        if hasattr(Office, "update_ventilation_conductance"):
-            Office.update_ventilation_conductance()
+        #_+_#
+        Office.ventilation_efficiency = (
+            hr_eff_schedule[hour] if desired_ach > 0 else 0.0
+        )
 
         ach_vent_hourly.append(Office.ach_vent)
         ach_infl_hourly.append(Office.ach_infl)
         h_ve_adj_hourly.append(Office.h_ve_adj)
 
         Office.t_set_heating = heating_schedule[hour]
+        #_+_#
+        occupancy_fraction = occupancy_profile.loc[hour, "People"]
+        occupancy = occupancy_fraction * p["max_occupancy"]
 
-        internal_gains = (
-            occupancy * p["gain_per_person"]
-            + p["appliance_gains"] * Office.floor_area
+        people_gains = occupancy * p["gain_per_person"]
+
+        appliance_gains = (
+            occupancy_fraction
+            * p["appliance_gains"]
+            * Office.occ_area
         )
 
+        internal_gains = people_gains + appliance_gains
+        #_+_#
         t_out = location.weather_data["drybulb_C"][hour]
 
         altitude, azimuth = location.calc_sun_position(

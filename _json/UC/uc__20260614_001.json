@@ -4,8 +4,8 @@
   "parameters": {
     "_alpha": {
       "distribution": "uniform",
-      "lower": 4.5,
-      "upper": 5.5
+      "lower": 5.4,
+      "upper": 6.6
     },
     "_beta": {
       "distribution": "uniform",
@@ -29,8 +29,8 @@
     },
     "infl_rate_m3ph_m2": {
       "distribution": "uniform",
-      "lower": 2.7,
-      "upper": 3.3
+      "lower": 3.6,
+      "upper": 4.4
     },
     "gain_per_person": {
       "distribution": "uniform",
@@ -39,18 +39,18 @@
     },
     "appliance_gains": {
       "distribution": "uniform",
-      "lower": 14.4,
-      "upper": 17.6
+      "lower": 15.2,
+      "upper": 16.8
     },
     "max_occupancy": {
       "distribution": "uniform",
-      "lower": 688.5,
-      "upper": 841.5
+      "lower": 778.5,
+      "upper": 951.5
     },
     "fresh_air_lps": {
       "distribution": "uniform",
-      "lower": 8.1,
-      "upper": 9.9
+      "lower": 10.8,
+      "upper": 13.2
     },
     "atrium_ach": {
       "distribution": "uniform",
@@ -59,13 +59,13 @@
     },
     "window_opening_ach": {
       "distribution": "uniform",
-      "lower": 0.09,
-      "upper": 0.11
+      "lower": 0.025,
+      "upper": 0.225
     },
     "unoccupied_ach_fraction": {
       "distribution": "uniform",
-      "lower": 0,
-      "upper": 1
+      "lower": 0.0,
+      "upper": 0.0
     },
     "occupancy_threshold_fraction": {
       "distribution": "uniform",

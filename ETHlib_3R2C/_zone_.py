@@ -6,25 +6,20 @@ class DebugZone(Zone):
     """
     A Zone subclass that:
     - Stores ach_vent and ach_infl as attributes.
-    - Allows dynamic update of ach_vent.
+    - Allows dynamic update of ach_vent (property setter recalculates h_ve_adj).
     - Records intermediate calculation values for debugging.
     """
-
     def __init__(self, *args, **kwargs):
-        # Extract ventilation parameters before passing to super()
-        self._ach_vent = kwargs.pop("ach_vent", 1.5)
-        self._ach_infl = kwargs.pop("ach_infl", 0.5)
-        self._ventilation_efficiency = kwargs.get("ventilation_efficiency", 0.6)
+        # Extract ventilation parameters from kwargs before passing to super()
+        self._ach_vent = kwargs.pop('ach_vent', 1.5)
+        self._ach_infl = kwargs.pop('ach_infl', 0.5)
+        self._occ_area = kwargs.pop('occ_area', None)
+        self._ventilation_efficiency = kwargs.get('ventilation_efficiency', 0.6)
 
-        # Pass stored ventilation values back to parent constructor
-        super().__init__(
-            *args,
-            ach_vent=self._ach_vent,
-            ach_infl=self._ach_infl,
-            **kwargs,
-        )
+        super().__init__(*args, **kwargs)
 
-        # Recalculate h_ve_adj with stored values
+        # Recalculate h_ve_adj with the stored values (super().__init__ already
+        # computed it using the original args, but we now store them for later updates)
         self.update_ventilation_conductance()
 
         # Debug logging
@@ -32,20 +27,16 @@ class DebugZone(Zone):
         self._current_debug = {}
 
     def update_ventilation_conductance(self):
-        """
-        Recalculate h_ve_adj from current ach_vent, ach_infl, and heat-recovery efficiency.
-        """
-
+        """Recalculate h_ve_adj from current ach_vent, ach_infl, and efficiency."""
         ach_tot = self._ach_infl + self._ach_vent
-
-        if ach_tot <= 0:
-            self.h_ve_adj = 0.0
-            return
-
-        b_ek = 1.0 - (self._ach_vent / ach_tot) * self._ventilation_efficiency
-
-        self.h_ve_adj = 1200.0 * b_ek * self.room_vol * (ach_tot / 3600.0)
-
+        b_ek = (1 - (self._ach_vent / ach_tot) * self._ventilation_efficiency)
+        self.h_ve_adj = 1200 * b_ek * self.room_vol * (ach_tot / 3600)
+        
+    @property
+    def occ_area(self):
+        if self._occ_area is None:
+            return self.floor_area
+        return self._occ_area
     @property
     def ach_vent(self):
         return self._ach_vent
