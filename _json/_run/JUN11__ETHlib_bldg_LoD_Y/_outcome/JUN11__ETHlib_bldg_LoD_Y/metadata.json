@@ -1,0 +1,10 @@
+{
+    "experiment_id": "JUN11__ETHlib_bldg_LoD_Y",
+    "engine": "ETHlib",
+    "model_name": "5R1C",
+    "controller_mode": "occupancy",
+    "baseline_name": "Baseline",
+    "variable": "HeatingEnergy",
+    "period_start": "2023-02-01 00:00",
+    "period_end": "2023-03-10 23:00"
+}

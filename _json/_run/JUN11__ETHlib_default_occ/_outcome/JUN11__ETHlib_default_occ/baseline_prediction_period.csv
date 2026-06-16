@@ -1,0 +1,11 @@
+experiment_id,engine,scenario,freq,sample_id,heating_energy_period
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,0,12.763840273210796
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,1,12.287349184974824
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,2,11.806323423331927
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,3,13.349694731037685
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,4,13.410685965882697
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,5,13.59800539963696
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,6,12.248660559389446
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,7,12.665473445341302
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,8,12.437633273366394
+JUN11__ETHlib_default_occ,ETHlib,Baseline,period,9,11.982210972852446

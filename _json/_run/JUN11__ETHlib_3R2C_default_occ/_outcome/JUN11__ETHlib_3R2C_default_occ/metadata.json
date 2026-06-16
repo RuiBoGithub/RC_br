@@ -1,0 +1,10 @@
+{
+    "experiment_id": "JUN11__ETHlib_3R2C_default_occ",
+    "engine": "ETHlib_3R2C",
+    "model_name": "3R2C",
+    "controller_mode": "occupancy",
+    "baseline_name": "Baseline",
+    "variable": "HeatingEnergy",
+    "period_start": "2023-02-01 00:00",
+    "period_end": "2023-03-10 23:00"
+}

@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 controller_mode = 'occupancy'
 def get_numbered_filename(folder, stem, suffix=".json", date_fmt="%Y%m%d"):
 
