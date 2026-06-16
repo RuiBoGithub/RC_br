@@ -4,23 +4,23 @@
   "parameters": {
     "t_set_heating": {
       "distribution": "uniform",
-      "lower": 18.9,
-      "upper": 23.1
-    },
-    "window_opening_ach": {
-      "distribution": "uniform",
-      "lower": 0.025,
-      "upper": 0.225
+      "lower": 18.0,
+      "upper": 24.0
     },
     "infl_rate_m3ph_m2": {
       "distribution": "uniform",
-      "lower": 3.6,
-      "upper": 4.4
+      "lower": 3.2,
+      "upper": 4.8
+    },
+    "window_opening_ach": {
+      "distribution": "uniform",
+      "lower": 0,
+      "upper": 0.2
     },
     "atrium_ach": {
       "distribution": "uniform",
-      "lower": 1.8,
-      "upper": 2.2
+      "lower": 1.6,
+      "upper": 2.4
     }
   }
 }

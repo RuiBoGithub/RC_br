@@ -10,7 +10,7 @@
     "max_occupancy": 865,
     "fresh_air_lps": 12,
     "atrium_ach": 2.0,
-    "window_opening_ach": 0.125,
+    "window_opening_ach": 0.1,
     "unoccupied_ach_fraction": 0,
     "occupancy_threshold_fraction": 0.1,
     "t_set_heating": 21.0,
