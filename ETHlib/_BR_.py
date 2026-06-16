@@ -63,21 +63,27 @@ def occupancy_default(year=2023):
             occupied_schedule.append(start_hour <= t.hour < end_hour)
 
     return occupied_schedule
-def occupancy_default_ach(
+def design_schedule_based_ach(
     hour,
-    occupied_schedule,
+    design_occupied_schedule,
     ach_vent_baseline,
     occupied_ach=None,
     unoccupied_ach=None,
     unoccupied_ach_fraction=0.01,
 ):
+    """
+    Ventilation controller based only on the default/design occupancy schedule.
+
+    This does not use actual occupancy_profile.
+    """
+
     if occupied_ach is None:
         occupied_ach = ach_vent_baseline
 
     if unoccupied_ach is None:
         unoccupied_ach = unoccupied_ach_fraction * ach_vent_baseline
 
-    return occupied_ach if occupied_schedule[hour] else unoccupied_ach
+    return occupied_ach if design_occupied_schedule[hour] else unoccupied_ach
 def calc_ach(
     n_people,
     fresh_air_lps,
@@ -122,7 +128,7 @@ def make_hr_eff_schedule(p, year=2023):
     winter_eff = p["ventilation_efficiency"]
     winter_months = [1, 2, 3, 10, 11, 12]
 
-    occupied_schedule = occupancy_default(year)
+    design_occupied_schedule = occupancy_default(year)
 
     idx = pd.date_range(
         start=f"{year}-01-01 00:00",
@@ -133,13 +139,21 @@ def make_hr_eff_schedule(p, year=2023):
     hr_eff = []
 
     for i, t in enumerate(idx):
-        if t.month in winter_months and occupied_schedule[i]:
+        if t.month in winter_months and design_occupied_schedule[i]:
             hr_eff.append(winter_eff)
         else:
             hr_eff.append(0.0)
 
     return hr_eff
 def make_heating_schedule(year, p):
+    """
+    Manager-defined heating setpoint schedule.
+
+    This schedule is NOT based on actual occupancy.
+    Weekday, Saturday, and Sunday profiles are defined explicitly.
+    Setback temperature is defined as heating setpoint minus 6°C.
+    """
+
     heating_index = pd.date_range(
         start=f"{year}-01-01 00:00",
         end=f"{year}-12-31 23:00",
@@ -148,29 +162,38 @@ def make_heating_schedule(year, p):
 
     schedule_mode = p.get("heating_schedule_mode", "original")
 
+    t_set_heating = p["t_set_heating"]
+    t_weekend_heating = p["t_weekend_heating"]
+    t_setback_heating = t_set_heating - 6
+
     if schedule_mode == "original":
         weekday_profile = (
-            [p["t_setback_heating"]] * 8
-            + [p["t_set_heating"]] * 11
-            + [p["t_setback_heating"]] * 5
+            [t_setback_heating] * 8
+            + [t_set_heating] * 11
+            + [t_setback_heating] * 5
         )
 
-        weekend_profile = (
-            [p["t_setback_heating"]] * 9
-            + [p["t_weekend_heating"]] * 9
-            + [p["t_setback_heating"]] * 6
+        saturday_profile = (
+            [t_setback_heating] * 9
+            + [t_weekend_heating] * 7
+            + [t_setback_heating] * 8
+        )
+
+        sunday_profile = (
+            [t_setback_heating] * 9
+            + [t_weekend_heating] * 7
+            + [t_setback_heating] * 8
         )
 
     elif schedule_mode == "8_8_8":
         weekday_profile = (
-            [p["t_setback_heating"]] * 8
-            + [p["t_set_heating"]] * 8
-            + [p["t_setback_heating"]] * 8
+            [t_setback_heating] * 8
+            + [t_set_heating] * 8
+            + [t_setback_heating] * 8
         )
 
-        weekend_profile = (
-            [p["t_setback_heating"]] * 24
-        )
+        saturday_profile = [t_setback_heating] * 24
+        sunday_profile = [t_setback_heating] * 24
 
     else:
         raise ValueError(
@@ -181,13 +204,16 @@ def make_heating_schedule(year, p):
     heating_schedule = []
 
     for ts in heating_index:
-        if ts.weekday() >= 5:
-            heating_schedule.append(weekend_profile[ts.hour])
+        if ts.weekday() < 5:
+            profile = weekday_profile
+        elif ts.weekday() == 5:
+            profile = saturday_profile
         else:
-            heating_schedule.append(weekday_profile[ts.hour])
+            profile = sunday_profile
+
+        heating_schedule.append(profile[ts.hour])
 
     return heating_schedule
-
 def make_zone(
     p,
     geometry,
@@ -302,7 +328,7 @@ def run_model(
 
     heating_schedule = make_heating_schedule(year=year, p=p)
 
-    occupied_schedule = occupancy_default(year)
+    design_occupied_schedule = occupancy_default(year)
 
     ach_vent_baseline, ach_infl_baseline = make_ach(
         p=p,
@@ -316,15 +342,24 @@ def run_model(
         year=year
     )
 
-    base_occupancy_controller_params = {
+    ventilation_controller_params = {
         "ach_vent_baseline": ach_vent_baseline,
-        "occupied_schedule": occupied_schedule,
+        "design_occupied_schedule": design_occupied_schedule,
     }
 
     if occupancy_controller_params is not None:
-        base_occupancy_controller_params.update(occupancy_controller_params)
+        forbidden_keys = {"occupied_schedule", "design_occupied_schedule"}
 
-    occupancy_controller_params = base_occupancy_controller_params
+        bad_keys = forbidden_keys.intersection(occupancy_controller_params)
+
+        if bad_keys:
+            raise ValueError(
+                "Do not pass an occupancy schedule through occupancy_controller_params. "
+                "Ventilation must use occupancy_default(year). "
+                f"Invalid keys: {sorted(bad_keys)}"
+            )
+
+        ventilation_controller_params.update(occupancy_controller_params)
 
     Office = make_zone(
         p=p,
@@ -350,9 +385,9 @@ def run_model(
         if controller_mode == "original":
             desired_ach = ach_vent_baseline
         elif controller_mode == "occupancy":
-            desired_ach = occupancy_default_ach(
+            desired_ach = design_schedule_based_ach(
                 hour=hour,
-                **occupancy_controller_params,
+                **ventilation_controller_params,
             )
         else:
             raise ValueError(

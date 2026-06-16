@@ -18,5 +18,6 @@
     "t_setback_heating": 15.0,
     "t_set_cooling": 28.0,
     "lighting_load": 0,
-    "ventilation_efficiency": 0.75
+    "ventilation_efficiency": 0.75,
+    "max_heating_energy_per_floor_area": 300
   }

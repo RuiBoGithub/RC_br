@@ -1,0 +1,11 @@
+experiment_id,engine,scenario,freq,sample_id,heating_energy_period
+rc_python_baseline_JUN15,python,Baseline,period,0,11.070302238338371
+rc_python_baseline_JUN15,python,Baseline,period,1,10.814276054019919
+rc_python_baseline_JUN15,python,Baseline,period,2,10.416016185962997
+rc_python_baseline_JUN15,python,Baseline,period,3,10.600447955959162
+rc_python_baseline_JUN15,python,Baseline,period,4,10.643839535012711
+rc_python_baseline_JUN15,python,Baseline,period,5,10.348458724372293
+rc_python_baseline_JUN15,python,Baseline,period,6,10.773629782725404
+rc_python_baseline_JUN15,python,Baseline,period,7,10.631323403887192
+rc_python_baseline_JUN15,python,Baseline,period,8,10.421118027540157
+rc_python_baseline_JUN15,python,Baseline,period,9,10.444722802752777
