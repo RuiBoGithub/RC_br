@@ -39,3 +39,22 @@ doi = {https://doi.org/10.1016/j.envsoft.2019.01.012},
 url = {https://www.sciencedirect.com/science/article/pii/S1364815218302822},
 author = {Andrea Saltelli and Ksenia Aleksankina and William Becker and Pamela Fennell and Federico Ferretti and Niels Holst and Sushan Li and Qiongli Wu},
 }
+@article{dimitriou2020applicability,
+  title={The applicability of Lumped Parameter modelling in houses using in-situ measurements},
+  author={Dimitriou, Vanda and Firth, Steven K and Hassan, Tarek M and Kane, Tom},
+  journal={Energy and Buildings},
+  volume={223},
+  pages={110068},
+  year={2020},
+  publisher={Elsevier}
+}
+@article{article,
+author = {Jayathissa, Prageeth and Luzzatto, Mauro and Schmidli, Jeremias and Hofer, Johannes and Nagy, Zoltán and Schlueter, Arno},
+year = {2017},
+month = {09},
+pages = {726-735},
+title = {Optimising building net energy demand with dynamic BIPV shading},
+volume = {202},
+journal = {Applied Energy},
+doi = {10.1016/j.apenergy.2017.05.083}
+}
