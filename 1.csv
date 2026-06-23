@@ -1,4 +1,0 @@
-Period,Response,Effect,SS,df,F,p_value,Significant
-CAL period,Energy_use,Model complexity,62.134,2,25.344,< 0.001,True
-CAL period,Energy_use,Data quality,21.866,2,8.919,< 0.001,True
-CAL period,Energy_use,Model complexity × Data quality,16.715,4,3.869,0.006,True
