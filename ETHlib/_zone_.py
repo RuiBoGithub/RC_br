@@ -55,44 +55,88 @@ class DebugZone(Zone):
         self._ach_infl = value
         self.update_ventilation_conductance()
 
-    def solve_energy(self, internal_gains, solar_gains, t_out, t_m_prev):
+    def solve_energy(
+        self,
+        internal_gains,
+        solar_gains,
+        t_out,
+        t_m_prev,
+        t_air_prev=None,
+    ):
         """
         Override solve_energy to capture t_air_0 and t_air_10 before
         the supply systems are called.
+
+        For the optional 5R2C mode in ETHlib/building_physics.py, t_air_prev is
+        carried as an attribute because the base solve_energy signature remains
+        5R1C-compatible.
         """
+        if t_air_prev is None:
+            t_air_prev = getattr(self, "t_air_prev", getattr(self, "t_air", t_m_prev))
+
+        self.t_air_prev = t_air_prev
+
         original_calc = self.calc_temperatures_crank_nicolson
         air_temps = {}
+        mass_temps = {}
 
-        def wrapper(energy_demand, ig, sg, tout, t_m_p):
-            t_m_result, t_air_result, t_op_result = original_calc(energy_demand,
-                                                                  ig, sg, tout, t_m_p)
+        def wrapper(energy_demand, ig, sg, tout, t_m_p, t_air_p=None):
+            if t_air_p is None:
+                t_air_p = t_air_prev
+
+            self.t_air_prev = t_air_p
+            t_m_result, t_air_result, t_op_result = original_calc(
+                energy_demand,
+                ig,
+                sg,
+                tout,
+                t_m_p,
+                t_air_p,
+            )
             air_temps[energy_demand] = t_air_result
+            mass_temps[energy_demand] = t_m_result
             return t_m_result, t_air_result, t_op_result
 
         self.calc_temperatures_crank_nicolson = wrapper
         try:
-            super().solve_energy(internal_gains, solar_gains, t_out, t_m_prev)
+            super().solve_energy(
+                internal_gains,
+                solar_gains,
+                t_out,
+                t_m_prev,
+                t_air_prev,
+            )
         finally:
             self.calc_temperatures_crank_nicolson = original_calc
 
-        t_air_0 = air_temps.get(0, None)
+        t_air_0 = air_temps.get(0.0, air_temps.get(0, None))
+        t_m_0 = mass_temps.get(0.0, mass_temps.get(0, None))
+
         test_power = 10 * self.floor_area
         t_air_10 = air_temps.get(test_power, None)
+        t_m_10 = mass_temps.get(test_power, None)
 
         debug_snapshot = {
             't_m_prev': t_m_prev,
+            't_air_prev': t_air_prev,
             't_out': t_out,
             'internal_gains': internal_gains,
             'solar_gains': solar_gains,
             'has_heating_demand': self.has_heating_demand,
             'has_cooling_demand': self.has_cooling_demand,
             't_air_free': t_air_0,
+            't_m_free': t_m_0,
             't_air_test': t_air_10,
+            't_m_test': t_m_10,
             'delta_t_air': (t_air_10 - t_air_0) if (t_air_0 is not None and t_air_10 is not None) else None,
             'energy_demand_unrestricted': getattr(self, 'energy_demand_unrestricted', None),
             'energy_demand': self.energy_demand,
             't_air_final': self.t_air,
             't_m_final': self.t_m,
+            't_air_next': getattr(self, 't_air_next', None),
+            't_m_next': getattr(self, 't_m_next', None),
+            't_air_energy_balance_residual': getattr(self, 't_air_energy_balance_residual', None),
+            't_m_energy_balance_residual': getattr(self, 't_m_energy_balance_residual', None),
             'h_ve_adj': self.h_ve_adj,
             'ach_vent': self.ach_vent,
             'ach_infl': self.ach_infl,

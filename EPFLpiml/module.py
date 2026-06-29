@@ -1016,3 +1016,229 @@ class LSTM(nn.Module):
 
         # Return the predictions and states of the model
         return output, (h, c)
+
+
+class MLSequenceModel(nn.Module):
+    """
+    Plug-in sequence model with the same runtime interface as the EPFL modules.
+
+    This class is intentionally neural-only. It is useful for swapping
+    sequence learners while preserving the Model training loop:
+
+        prediction, states = model(x, states, warm_start)
+
+    Supported built-in backend:
+        - "lstm": small LSTM encoder/decoder equivalent to the plain LSTM path.
+
+    Placeholder plug-in backend:
+        - "plugin" or "transformer": pass a callable module through
+          ``ml_backend_factory``. The factory receives ``kwargs`` and must
+          return an nn.Module with ``forward(x, states=None, warm_start=False)``
+          returning ``(prediction, states)``.
+    """
+
+    def __init__(self, kwargs: dict):
+        super().__init__()
+
+        self.kwargs = kwargs
+        self.device = kwargs["device"]
+        self.number_rooms = kwargs["number_rooms"]
+        self.number_inputs = kwargs["number_inputs"]
+        self.temperature_column = kwargs["temperature_column"]
+        self.case_column = kwargs["case_column"]
+        self.backend_name = kwargs.get("ml_backend", "lstm")
+
+        if self.backend_name == "lstm":
+            self.backend = _LSTMSequenceBackend(kwargs)
+        elif self.backend_name in {"plugin", "transformer"}:
+            factory = kwargs.get("ml_backend_factory")
+            if factory is None:
+                raise NotImplementedError(
+                    "ml_backend='transformer' is a placeholder. Provide "
+                    "ml_backend_factory=callable returning an nn.Module with "
+                    "forward(x, states=None, warm_start=False)."
+                )
+            self.backend = factory(kwargs)
+            if not isinstance(self.backend, nn.Module):
+                raise TypeError("ml_backend_factory must return an nn.Module.")
+        else:
+            raise ValueError(
+                "Unknown ml_backend={!r}. Choose 'lstm', 'plugin', or "
+                "'transformer'.".format(self.backend_name)
+            )
+
+    def forward(self, x_: torch.Tensor, states=None, warm_start: bool = False):
+        return self.backend(x_, states=states, warm_start=warm_start)
+
+    @property
+    def E_parameters(self):
+        return [[], [], [], []]
+
+
+class _LSTMSequenceBackend(nn.Module):
+    """
+    Internal LSTM backend for MLSequenceModel.
+
+    It mirrors the plain LSTM module but is kept separate so other
+    time-series backends can plug into MLSequenceModel without changing
+    the EPFL Model loop.
+    """
+
+    def __init__(self, kwargs: dict):
+        super().__init__()
+
+        self.device = kwargs["device"]
+        self.number_rooms = kwargs["number_rooms"]
+        self.number_inputs = kwargs["number_inputs"]
+        self.learn_initial_hidden_states = kwargs[
+            "learn_initial_hidden_states"
+        ]
+        self.feed_input_through_nn = kwargs["feed_input_through_nn"]
+        self.input_nn_hidden_sizes = kwargs["input_nn_hidden_sizes"]
+        self.lstm_hidden_size = kwargs["lstm_hidden_size"]
+        self.lstm_num_layers = kwargs["lstm_num_layers"]
+        self.layer_norm = kwargs["layer_norm"]
+        self.output_nn_hidden_sizes = kwargs["output_nn_hidden_sizes"]
+        self.temperature_column = kwargs["temperature_column"]
+        self.case_column = kwargs["case_column"]
+        self.division_factor = torch.Tensor(
+            kwargs["division_factor"]
+        ).to(self.device)
+
+        self.last = None
+        self._build_model()
+
+    def _build_model(self) -> None:
+        if self.learn_initial_hidden_states:
+            self.initial_h = nn.Parameter(
+                data=torch.zeros(
+                    self.lstm_num_layers,
+                    self.lstm_hidden_size,
+                )
+            )
+            self.initial_c = nn.Parameter(
+                data=torch.zeros(
+                    self.lstm_num_layers,
+                    self.lstm_hidden_size,
+                )
+            )
+
+        if self.feed_input_through_nn:
+            sizes = [self.number_inputs] + self.input_nn_hidden_sizes
+            self.input_nn = nn.ModuleList(
+                [
+                    nn.Sequential(
+                        nn.Linear(sizes[i], sizes[i + 1]),
+                        nn.ReLU(),
+                    )
+                    for i in range(len(sizes) - 1)
+                ]
+            )
+
+        lstm_input_size = (
+            self.input_nn_hidden_sizes[-1]
+            if self.feed_input_through_nn
+            else self.number_inputs
+        )
+        self.lstm = nn.LSTM(
+            input_size=lstm_input_size,
+            hidden_size=self.lstm_hidden_size,
+            num_layers=self.lstm_num_layers,
+            batch_first=True,
+        )
+        if self.layer_norm:
+            self.norm = nn.LayerNorm(
+                normalized_shape=self.lstm_hidden_size
+            )
+
+        sizes = (
+            [self.lstm_hidden_size]
+            + self.output_nn_hidden_sizes
+            + [self.number_rooms]
+        )
+        self.output_nn = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Linear(sizes[i], sizes[i + 1]),
+                    nn.Tanh(),
+                )
+                for i in range(len(sizes) - 1)
+            ]
+        )
+
+        for name, param in self.named_parameters():
+            if "norm" not in name:
+                if "bias" in name:
+                    nn.init.constant_(param, 0.0)
+                elif "weight" in name:
+                    nn.init.xavier_normal_(param)
+
+    def forward(self, x_: torch.Tensor, states=None, warm_start: bool = False):
+        x = x_.clone()
+
+        if len(x.shape) == 2:
+            x = x.unsqueeze(1)
+
+        if states is not None:
+            h, c = states
+        else:
+            if self.learn_initial_hidden_states:
+                h = torch.stack(
+                    [
+                        self.initial_h.clone()
+                        for _ in range(x.shape[0])
+                    ],
+                    dim=1,
+                ).to(self.device)
+                c = torch.stack(
+                    [
+                        self.initial_c.clone()
+                        for _ in range(x.shape[0])
+                    ],
+                    dim=1,
+                ).to(self.device)
+            else:
+                h = torch.zeros(
+                    (
+                        self.lstm_num_layers,
+                        x.shape[0],
+                        self.lstm_hidden_size,
+                    )
+                ).to(self.device)
+                c = torch.zeros(
+                    (
+                        self.lstm_num_layers,
+                        x.shape[0],
+                        self.lstm_hidden_size,
+                    )
+                ).to(self.device)
+
+            self.last = torch.zeros(
+                (x.shape[0], len(self.temperature_column))
+            ).to(self.device)
+
+        if not warm_start:
+            x[:, -1, self.temperature_column] = self.last
+
+        embedding = x
+        if self.feed_input_through_nn:
+            for layer in self.input_nn:
+                embedding = layer(embedding)
+
+        lstm_output, (h, c) = self.lstm(embedding, (h, c))
+        if self.layer_norm:
+            lstm_output = self.norm(lstm_output)
+
+        output = lstm_output
+        for layer in self.output_nn:
+            output = layer(output)
+        output = (
+            output.squeeze()
+            / self.division_factor
+            + x[:, -1, self.temperature_column]
+        )
+
+        self.last = output.clone()
+        output[torch.where(x[:, -1, self.case_column] < 1e-6)[0], :] = 0.
+
+        return output, (h, c)

@@ -16,7 +16,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch import optim
 
-from EPFLpiml.module import PCNN, S_PCNN, M_PCNN, LSTM
+from EPFLpiml.module import PCNN, S_PCNN, M_PCNN, LSTM, MLSequenceModel
 from EPFLpiml.data import prepare_data
 from EPFLpiml.util import model_save_name_factory, format_elapsed_time, inverse_normalize, check_GPU_availability, \
     elapsed_timer, ensure_list, check_initialization_physical_parameters
@@ -44,8 +44,8 @@ class Model:
         data_kwargs = data_params.copy()
         model_kwargs = model_params.copy()
 
-        assert module in ['PCNN', 'S_PCNN', 'M_PCNN', 'LSTM'],\
-            f"The provided model type {module} does not exist, please chose among `'PCNN', 'S_PCNN', 'M_PCNN', 'LSTM'`."
+        assert module in ['PCNN', 'S_PCNN', 'M_PCNN', 'LSTM', 'ML', 'MLSequenceModel'],\
+            f"The provided model type {module} does not exist, please chose among `'PCNN', 'S_PCNN', 'M_PCNN', 'LSTM', 'ML', 'MLSequenceModel'`."
 
         # Define the main attributes
         self.module = module
@@ -61,8 +61,8 @@ class Model:
         # Compute the temperature range 
         model_kwargs['temperature_min'], model_kwargs['temperature_range'] = self.dataset.get_temperarature_min_and_range()
 
-        # Special LSTM case
-        if module != 'LSTM':
+        # Special neural-only cases
+        if module not in ['LSTM', 'ML', 'MLSequenceModel']:
             for key in model_kwargs['initial_values_physical_parameters']:
                 model_kwargs['initial_values_physical_parameters'][key] = ensure_list(model_kwargs['initial_values_physical_parameters'][key])
             # Snaity check
@@ -112,6 +112,7 @@ class Model:
         # Prepare the torch module
         # Group parameters for simplicity
         kwargs = model_kwargs | data_kwargs
+        kwargs["X_columns"] = self.dataset.X_columns
         if self.module == "PCNN":
             self.model = PCNN(kwargs=kwargs)
         elif self.module == "S_PCNN":
@@ -120,6 +121,8 @@ class Model:
             self.model = M_PCNN(kwargs=kwargs)
         elif self.module == "LSTM":
             self.model = LSTM(kwargs=kwargs)
+        elif self.module in ["ML", "MLSequenceModel"]:
+            self.model = MLSequenceModel(kwargs=kwargs)
 
         # define the optimizer and the loss
         self.optimizer = optim.Adam(self.model.parameters(), lr=model_kwargs["learning_rate"])

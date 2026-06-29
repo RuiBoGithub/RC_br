@@ -283,6 +283,7 @@ def run_model_case(
     sampled_params=None,
     controller_mode="original",
     occupancy_controller_params=None,
+    rc_order="5R1C",
 ):
     if sampled_params is None:
         sampled_params = {}
@@ -298,6 +299,7 @@ def run_model_case(
         year=case.year,
         controller_mode=controller_mode,
         occupancy_controller_params=occupancy_controller_params,
+        rc_order=rc_order,
         Zone=case.Zone,
         supply_system=case.supply_system,
         emission_system=case.emission_system,
@@ -314,17 +316,22 @@ def run_model(
     year=2023,
     controller_mode="original",
     occupancy_controller_params=None,
+    rc_order="5R1C",
     Zone=None,
     supply_system=None,
     emission_system=None,
 ):
     p = merge_params(sampled_params, default_params)
+    rc_order = rc_order.upper()
+    if rc_order not in {"5R1C", "5R2C"}:
+        raise ValueError("rc_order must be '5R1C' or '5R2C'.")
 
     HeatingDemand, HeatingEnergy, CoolingDemand, CoolingEnergy = [], [], [], []
     ElectricityOut, IndoorAir, OutsideTemp, SolarGains, COP = [], [], [], [], []
     ach_vent_hourly, ach_infl_hourly, h_ve_adj_hourly = [], [], []
 
     t_m_prev = 20.0
+    t_air_prev = 20.0
 
     heating_schedule = make_heating_schedule(year=year, p=p)
 
@@ -370,6 +377,12 @@ def run_model(
         supply_system=supply_system,
         emission_system=emission_system,
     )
+    Office.rc_order = rc_order
+    Office.t_m = t_m_prev
+    Office.t_air_prev = t_air_prev
+    Office.t_air = t_air_prev
+    Office.t_m_next = t_m_prev
+    Office.t_air_next = t_air_prev
 
     SouthWindow = Window(
         azimuth_tilt=0,
@@ -406,6 +419,7 @@ def run_model(
         h_ve_adj_hourly.append(Office.h_ve_adj)
 
         Office.t_set_heating = heating_schedule[hour]
+        Office.t_air_prev = t_air_prev
         #_+_#
         occupancy_fraction = occupancy_profile.loc[hour, "People"]
         occupancy = occupancy_fraction * p["max_occupancy"]
@@ -448,6 +462,7 @@ def run_model(
             solar_gains=SouthWindow.solar_gains,
             t_out=t_out,
             t_m_prev=t_m_prev,
+            t_air_prev=t_air_prev,
         )
 
         Office.solve_lighting(
@@ -456,6 +471,8 @@ def run_model(
         )
 
         t_m_prev = Office.t_m_next
+        if rc_order == "5R2C":
+            t_air_prev = getattr(Office, "t_air_next", Office.t_air)
 
         fa = geometry["FLOOR_AREA"]
 

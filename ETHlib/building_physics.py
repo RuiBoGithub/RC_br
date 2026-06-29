@@ -75,6 +75,8 @@ INPUT PARAMETER DEFINITION
 
 """
 
+import math
+
 import supply_system
 import emission_system
 
@@ -134,6 +136,7 @@ class Zone(object):
         # [m2] Effective Mass Area assuming a medium weight zone #12.3.1.2
         self.mass_area = self.floor_area * 2.5
         self.room_vol = room_vol  # [m3] Room Volume
+        self.c_air = 1200.0 * self.room_vol  # [J/K] air capacitance for optional 5R2C mode
         self.total_internal_area = total_internal_area
         # A_t or At is defined as being the area of all surfaces facing the room.
         self.A_t = self.total_internal_area
@@ -177,6 +180,8 @@ class Zone(object):
         self.cooling_supply_system = cooling_supply_system
         self.heating_emission_system = heating_emission_system
         self.cooling_emission_system = cooling_emission_system
+        self.rc_order = "5R1C"
+        self.t_air_prev = t_set_heating
 
     @property
     def h_tr_1(self):
@@ -235,7 +240,14 @@ class Zone(object):
         else:
             self.lighting_demand = 0
 
-    def solve_energy(self, internal_gains, solar_gains, t_out, t_m_prev):
+    def solve_energy(
+            self,
+            internal_gains,
+            solar_gains,
+            t_out,
+            t_m_prev,
+            t_air_prev=None,
+            ):
         """
         Calculates the heating and cooling consumption of a building for a set timestep
 
@@ -262,10 +274,13 @@ class Zone(object):
         :rtype: float
 
         """
-        # Main File
+        if t_air_prev is None:
+            t_air_prev = getattr(self, "t_air_prev", getattr(self, "t_air", t_m_prev))
+
+        self.t_air_prev = t_air_prev
 
         # check demand, and change state of self.has_heating_demand, and self._has_cooling_demand
-        self.has_demand(internal_gains, solar_gains, t_out, t_m_prev)
+        self.has_demand(internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)
 
         if not self.has_heating_demand and not self.has_cooling_demand:
 
@@ -299,10 +314,10 @@ class Zone(object):
 
             # Calculates energy_demand used below
             self.calc_energy_demand(
-                internal_gains, solar_gains, t_out, t_m_prev)
+                internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)
 
             self.calc_temperatures_crank_nicolson(
-                self.energy_demand, internal_gains, solar_gains, t_out, t_m_prev)
+                self.energy_demand, internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)
             # calculates the actual t_m resulting from the actual heating
             # demand (energy_demand)
 
@@ -353,7 +368,14 @@ class Zone(object):
     # TODO: rename. this is expected to return a boolean. instead, it changes state??? you don't want to change state...
     # why not just return has_heating_demand and has_cooling_demand?? then call the function "check_demand"
     # has_heating_demand, has_cooling_demand = self.check_demand(...)
-    def has_demand(self, internal_gains, solar_gains, t_out, t_m_prev):
+    def has_demand(
+            self,
+            internal_gains,
+            solar_gains,
+            t_out,
+            t_m_prev,
+            t_air_prev=None,
+            ):
         """
         Determines whether the building requires heating or cooling
         Used in: solve_energy()
@@ -366,7 +388,10 @@ class Zone(object):
         energy_demand = 0
         # Solve for the internal temperature t_Air
         self.calc_temperatures_crank_nicolson(
-            energy_demand, internal_gains, solar_gains, t_out, t_m_prev)
+            energy_demand, internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)
+
+        self.t_air_free = self.t_air
+        self.t_m_free = self.t_m
 
         # If the air temperature is less or greater than the set temperature,
         # there is a heating/cooling load
@@ -380,7 +405,15 @@ class Zone(object):
             self.has_heating_demand = False
             self.has_cooling_demand = False
 
-    def calc_temperatures_crank_nicolson(self, energy_demand, internal_gains, solar_gains, t_out, t_m_prev):
+    def calc_temperatures_crank_nicolson(
+            self,
+            energy_demand,
+            internal_gains,
+            solar_gains,
+            t_out,
+            t_m_prev,
+            t_air_prev=None,
+            ):
         """
         Determines node temperatures and computes derivation to determine the new node temperatures
         Used in: has_demand(), solve_energy(), calc_energy_demand()
@@ -400,11 +433,21 @@ class Zone(object):
 
         self.calc_t_s(t_out)
 
-        self.calc_t_air(t_out)
+        if getattr(self, "rc_order", "5R1C") == "5R2C":
+            self.calc_t_air_next_5r2c(t_out, t_air_prev)
+        else:
+            self.calc_t_air(t_out)
 
         return self.t_m, self.t_air, self.t_opperative
 
-    def calc_energy_demand(self, internal_gains, solar_gains, t_out, t_m_prev):
+    def calc_energy_demand(
+            self,
+            internal_gains,
+            solar_gains,
+            t_out,
+            t_m_prev,
+            t_air_prev=None,
+            ):
         """
         Calculates the energy demand of the space if heating/cooling is active
         Used in: solve_energy()
@@ -417,7 +460,7 @@ class Zone(object):
         energy_demand_0 = 0
         # Calculate the air temperature with no heating/cooling
         t_air_0 = self.calc_temperatures_crank_nicolson(
-            energy_demand_0, internal_gains, solar_gains, t_out, t_m_prev)[1]
+            energy_demand_0, internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)[1]
 
         # Step 2: Calculate the unrestricted heating/cooling required
 
@@ -438,11 +481,14 @@ class Zone(object):
         # Calculate the air temperature obtained by having this 10 W/m2
         # setpoint
         t_air_10 = self.calc_temperatures_crank_nicolson(
-            energy_floorAx10, internal_gains, solar_gains, t_out, t_m_prev)[1]
+            energy_floorAx10, internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)[1]
 
         # Determine the unrestricted heating/cooling off the building
-        self.calc_energy_demand_unrestricted(
-            energy_floorAx10, t_air_set, t_air_0, t_air_10)
+        if abs(t_air_10 - t_air_0) < 1e-9:
+            self.energy_demand_unrestricted = 0.0
+        else:
+            self.calc_energy_demand_unrestricted(
+                energy_floorAx10, t_air_set, t_air_0, t_air_10)
 
         # Step 3: Check if available heating or cooling power is sufficient
         if self.max_cooling_energy <= self.energy_demand_unrestricted <= self.max_heating_energy:
@@ -468,7 +514,7 @@ class Zone(object):
 
         # calculate system temperatures for Step 3/Step 4
         self.calc_temperatures_crank_nicolson(
-            self.energy_demand, internal_gains, solar_gains, t_out, t_m_prev)
+            self.energy_demand, internal_gains, solar_gains, t_out, t_m_prev, t_air_prev)
 
     def calc_energy_demand_unrestricted(self, energy_floorAx10, t_air_set, t_air_0, t_air_10):
         """
@@ -541,6 +587,13 @@ class Zone(object):
 
         self.t_m_next = ((t_m_prev * ((self.c_m / 3600.0) - 0.5 * (self.h_tr_3 + self.h_tr_em))) +
                          self.phi_m_tot) / ((self.c_m / 3600.0) + 0.5 * (self.h_tr_3 + self.h_tr_em))
+        self.t_m_energy_balance_residual = (
+            self.t_m_next * ((self.c_m / 3600.0) + 0.5 * (self.h_tr_3 + self.h_tr_em))
+            - (
+                t_m_prev * ((self.c_m / 3600.0) - 0.5 * (self.h_tr_3 + self.h_tr_em))
+                + self.phi_m_tot
+            )
+        )
 
     def calc_phi_m_tot(self, t_out):
         """
@@ -588,3 +641,39 @@ class Zone(object):
         # Calculate the temperature of the inside air
         self.t_air = (self.h_tr_is * self.t_s + self.h_ve_adj *
                       t_supply + self.phi_ia) / (self.h_tr_is + self.h_ve_adj)
+        self.t_air_energy_balance_residual = (
+            self.h_tr_is * (self.t_s - self.t_air)
+            + self.h_ve_adj * (t_supply - self.t_air)
+            + self.phi_ia
+        )
+
+    def calc_t_air_next_5r2c(self, t_out, t_air_prev=None):
+        """
+        Optional 5R2C extension: keep the existing 5R1C mass/surface step
+        and add an air capacitance state. The hourly source is held constant
+        and integrated exactly to avoid under-resolved Crank-Nicolson
+        oscillations of the fast air node.
+        """
+
+        dt = 3600.0
+        t_supply = t_out
+        if t_air_prev is None:
+            t_air_prev = getattr(self, "t_air_prev", getattr(self, "t_air", self.t_set_heating))
+
+        self.t_air_prev = t_air_prev
+        conductance = self.h_tr_is + self.h_ve_adj
+        source = self.h_tr_is * self.t_s + self.h_ve_adj * t_supply + self.phi_ia
+        a = conductance / self.c_air
+        t_air_equilibrium = source / conductance
+
+        self.t_air_next = t_air_equilibrium + (
+            t_air_prev - t_air_equilibrium
+        ) * math.exp(-a * dt)
+        self.t_air = self.t_air_next
+        self.t_air_energy_balance_residual = (
+            self.t_air_next
+            - (
+                t_air_equilibrium
+                + (t_air_prev - t_air_equilibrium) * math.exp(-a * dt)
+            )
+        )
